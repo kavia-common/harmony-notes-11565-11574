@@ -143,8 +143,22 @@ function NoteEditor({ note, onUpdate }) {
   );
 }
 
-// Bottom music player
-function MusicPlayer({ audios, currentTrackIndex, isPlaying, onPlayPause, onPrev, onNext, onSeek, onSetVolume, volume }) {
+/**
+ * Bottom music player with music upload.
+ * Accepts a prop for handling user music uploads.
+ */
+function MusicPlayer({
+  audios,
+  currentTrackIndex,
+  isPlaying,
+  onPlayPause,
+  onPrev,
+  onNext,
+  onSetVolume,
+  volume,
+  onMusicUpload,
+  acceptTypes = ['.mp3', '.wav', '.ogg'],
+}) {
   // PUBLIC_INTERFACE
   const audioRef = useRef(null);
   useEffect(() => {
@@ -185,13 +199,38 @@ function MusicPlayer({ audios, currentTrackIndex, isPlaying, onPlayPause, onPrev
           title="Volume"
           style={{ marginLeft: 12 }}
         />
+        {/* Music Upload Button */}
+        <label
+          style={{
+            marginLeft: 18,
+            background: "var(--color-accent)",
+            color: "#fff",
+            borderRadius: 5,
+            padding: "6px 14px",
+            fontWeight: 500,
+            cursor: "pointer",
+            boxShadow: "var(--shadow-sm)",
+            fontSize: "1em",
+          }}
+          title="Upload music (mp3, wav, ogg)"
+        >
+          ＋ Music
+          <input
+            type="file"
+            accept={acceptTypes.join(",")}
+            style={{ display: "none" }}
+            onChange={onMusicUpload}
+          />
+        </label>
       </div>
     </div>
   );
 }
 
-// The main layout
-// Main app state & logic
+/**
+ * The main layout and logic for Harmony Notes, including note management, folders, theming,
+ * and music player (supporting user-uploaded music files).
+ */
 // PUBLIC_INTERFACE
 function App() {
   // Theme state
@@ -209,13 +248,11 @@ function App() {
   const [currentFolderId, setCurrentFolderId] = useState('default');
 
   // Notes state
-  const [notes, setNotes] = useState([
-    // Example: { id: '1', folderId: 'default', title: 'First Note', body: 'Welcome to Harmony Notes!' }
-  ]);
+  const [notes, setNotes] = useState([]);
   const [selectedNoteId, setSelectedNoteId] = useState(null);
 
-  // Music state
-  const audioSamples = [
+  // Music: built-in samples + user uploads
+  const baseAudioSamples = [
     {
       title: 'Calm Vibes',
       src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'
@@ -229,16 +266,51 @@ function App() {
       src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3'
     },
   ];
+  // Keep user-uploaded tracks here:
+  const [userTracks, setUserTracks] = useState([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(0.5);
+
+  // Compute the audio track list
+  const audioList = [...baseAudioSamples, ...userTracks];
+
+  // Handle file upload and add to userTracks
+  // PUBLIC_INTERFACE
+  const handleMusicUpload = e => {
+    // Accept multiple files, but add only the first one for now. User can upload one at a time.
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const validTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/x-pn-wav', 'audio/ogg'];
+    const fileArr = Array.from(files).filter(file => validTypes.includes(file.type) || /\.(mp3|wav|ogg)$/i.test(file.name));
+    if (fileArr.length === 0) {
+      alert('Unsupported file type. Please upload an MP3, WAV, or OGG file.');
+      e.target.value = '';
+      return;
+    }
+    const selectedFile = fileArr[0];
+    const url = URL.createObjectURL(selectedFile);
+    // Use just file name (excluding extension) as default title.
+    const title = selectedFile.name.replace(/\.[^/.]+$/, '');
+    setUserTracks(tracks => [...tracks, { title: title, src: url, user: true }]);
+    // Set to play the new upload track immediately:
+    setCurrentTrackIndex(audioList.length); // This points to the newly added at the end
+    setIsPlaying(true);
+    // Reset file input for future uploads
+    e.target.value = '';
+  };
+
+  // Update "currentTrackIndex" logic to stay within bounds if audioList length changes (when uploading/removing tracks)
+  useEffect(() => {
+    if (currentTrackIndex > audioList.length - 1) {
+      setCurrentTrackIndex(audioList.length - 1);
+    }
+  }, [audioList.length, currentTrackIndex]);
 
   // Derived filtered notes by folder
   const displayNotes = currentFolderId === 'all'
     ? notes
     : notes.filter(n => n.folderId === currentFolderId);
-
-  // note: setSelectedNoteId('...') selects a note for editing
 
   // ==== CRUD for folders ====
   // PUBLIC_INTERFACE
@@ -300,9 +372,9 @@ function App() {
   // PUBLIC_INTERFACE
   const handlePlayPause = () => setIsPlaying(p => !p);
   // PUBLIC_INTERFACE
-  const handlePrev = () => setCurrentTrackIndex(i => i > 0 ? i - 1 : 0);
+  const handlePrev = () => setCurrentTrackIndex(i => (i > 0 ? i - 1 : 0));
   // PUBLIC_INTERFACE
-  const handleNext = () => setCurrentTrackIndex(i => i < audioSamples.length - 1 ? i + 1 : i);
+  const handleNext = () => setCurrentTrackIndex(i => (i < audioList.length - 1 ? i + 1 : i));
   // PUBLIC_INTERFACE
   const handleSetVolume = v => setVolume(v);
 
@@ -335,7 +407,7 @@ function App() {
           <NoteEditor note={selectedNote} onUpdate={handleNoteBodyUpdate} />
         </div>
         <MusicPlayer
-          audios={audioSamples}
+          audios={audioList}
           currentTrackIndex={currentTrackIndex}
           isPlaying={isPlaying}
           onPlayPause={handlePlayPause}
@@ -343,6 +415,8 @@ function App() {
           onNext={handleNext}
           onSetVolume={handleSetVolume}
           volume={volume}
+          onMusicUpload={handleMusicUpload}
+          acceptTypes={['.mp3', '.wav', '.ogg']}
         />
       </div>
     </div>
